@@ -64,9 +64,12 @@ class Sample():
         imgUs = self.upSample(imgDs,cols,rows)
         imgUs = cv2.filter2D(imgUs,-1,kernel=self.upSampleKernel())
         print("src shape",img.shape,"ds shape",imgDs.shape,"us shape",imgUs.shape)
+        diff = np.subtract(img,imgUs)
+
         cv2.imshow("srcImage",img)
         cv2.imshow("Ds",imgDs.astype(np.uint8))
         cv2.imshow("Us",imgUs.astype(np.uint8))
+        cv2.imshow("diff",diff.astype(np.uint8))
         cv2.waitKey(0)
 if __name__ == '__main__':
     path = r"C:\Users\Administrator\Desktop\IMG_2405.JPG"
