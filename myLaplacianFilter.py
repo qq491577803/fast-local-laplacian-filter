@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from downUpSample import Sample
 import pandas as pd
+from LocalLaplaceImageConverter import LocalLaplaceImageConverter
 f = open(r"E:\local_laplacian_filter\local_laplacian_filter\log.txt",'w')
 class MylocalLaplacianFilter():
     def __init__(self,path,alpha,beta,sigma,noise_leve):
@@ -13,7 +14,7 @@ class MylocalLaplacianFilter():
         self.beta = beta
         self.alpha = alpha
         self.noise_leve = noise_leve
-        self.leves = 6
+        self.leves = 4
         self.width = self.input.shape[1]
         self.hight = self.input.shape[0]
         self.dim = (self.width,self.hight)
@@ -28,6 +29,59 @@ class MylocalLaplacianFilter():
                   [0.0025, 0.0125, 0.02,   0.0125, 0.0025],
                  ]
         return np.array(kernel)
+
+
+
+# """copy start"""
+    # detail remapping function
+    def fd(self, d):
+        noise_level = float(0.01)
+        out = d ** self.kAlpha
+        if self.kAlpha < 1.0:
+            tau = self.smooth_step(noise_level, 2 * noise_level, d * self.kSigmaR)
+            out = tau * out + (1 - tau) * d
+        return out
+
+
+    # edge remapping function
+    def fe(self, a):
+        out = self.kBeta * a
+        return out
+
+
+    # color remapping function
+    def r_color(self, i, g0, sigma_r):
+        g0 = np.tile(g0, [i.shape[0], i.shape[1], 1])
+        dnrm = np.sqrt(np.sum((i - g0) ** 2, axis=2))
+        eps_dnrm = np.spacing(1) + dnrm
+        unit = (i - g0) / np.tile(eps_dnrm[..., None], [1, 1, 3])
+        rd = g0 + unit * np.tile(sigma_r * self.fd(dnrm / sigma_r)[..., None], [1, 1, 3])
+        re = g0 + unit * np.tile(sigma_r + self.fe(dnrm - sigma_r)[..., None], [1, 1, 3])
+        isedge = np.tile((dnrm > sigma_r)[..., None], [1, 1, 3])
+        return np.logical_not(isedge) * rd + isedge * re
+
+
+    # grayscale remapping function
+    def r_gray(self, i, g0, sigma_r):
+        dnrm = abs(i - g0)
+        dsgn = np.sign(i - g0)
+
+        rd = g0 + dsgn * sigma_r * self.fd(dnrm / sigma_r)
+        re = g0 + dsgn * (self.fe(dnrm - sigma_r) + sigma_r)
+
+        isedge = dnrm > sigma_r
+        return np.logical_not(isedge) * rd + isedge * re
+
+    def remapping(self, image, gauss, remapping_type):
+        if remapping_type == 'rgb':
+            return self.r_color(image, gauss, self.sigma)
+        if remapping_type == 'lum':
+            return self.r_gray(image, gauss, self.sigma)
+        return None
+
+# """copy end"""
+
+
     def get_leves(self,image):
         rows,cols = image.shape[0],image.shape[1]
         mid_d = min(rows,cols)
@@ -101,28 +155,13 @@ class MylocalLaplacianFilter():
         return laylacian_layers
 
     def imageProcessor(self):
-        self.gaussian_pyramid = self.gaussion_layers(self.img_norm,self.leves)
-        self.laplacian_pyramic[0] = self.gaussian_pyramid[0].copy()
-        # for n in range(self.leves):
-            # df = pd.DataFrame(np.array(self.gaussian_pyramid)[n])
-            # df.to_csv(r"E:\local_laplacian_filter\local_laplacian_filter\log.csv",mode='a+')
+        self.gaussian_pyramid = Sample().gaussPyramid(self.img_norm,self.leves)
+        self.laplacian_pyramic = self.gaussian_pyramid.copy()
         for leve in range(1,self.leves):
             hw = 3 * 2 ** (leve-1) - 2
             print("-----------------leve",leve,"-----------------")
             for  y in range(self.gaussian_pyramid[leve-1].shape[0] + 1):
                 for x in range(self.gaussian_pyramid[leve-1].shape[1] + 1):
-                    '''
-                                        # print("leve:", leve, "hw:", hw, file=f)
-                    # print("leve:",leve,"y,x",y,x,file=f)
-                    # yf = (y-1) * 2** (leve - 1) + 1
-                    # xf = (x-1) * 2** (leve - 1) + 1
-                    # print("leve:",leve,"yf,xf",yf,xf,file=f)
-                    # yrng = [max(1,yf - hw),min(self.dim[1],yf + hw)]
-                    # xrng = [max(1,xf - hw),min(self.dim[0],xf + hw)]
-                    # print("leve:",leve,"yrng,xrng",xrng,yrng,file=f)
-                    # isub = self.input[yrng[0] - 1: yrng[1],xrng[0] - 1 : xrng[1]]
-                    # # print("leve:",leve,"isub:",isub / 255.0,file=f)
-                    '''
                     g0 = self.gaussian_pyramid[leve-1][y - 1,x - 1]
                     x_src = x * 2 ** (leve-1) + 1
                     y_src = y * 2 ** (leve-1) + 1
@@ -132,13 +171,21 @@ class MylocalLaplacianFilter():
                     y_start = max(y_src - sample_with,1) - 1
                     y_end = min(y_src + sample_with,self.dim[1])
                     src = self.img_norm[y_start:y_end,x_start:x_end]
-                    g0_remap = self.remap(g0,src)
-                    l_remap = self.laplacian_layers(g0_remap)
+                    # print("src",src)
+                    # print("g0",g0)
+                    # g0_remap = self.remapping(src,g0,"lum")
+                    # print(g0_remap)
+                    g0_remap = LocalLaplaceImageConverter(0.1, 0.1, 0.1, './data/inputdata/flower.png', 100).remapping(src,g0,"lum")
+                    _,l_remap = Sample().laplacian_pyramid(g0_remap, leve)
 
-                    # coll = int(l_remap[2].shape[0] / 2)
-                    # roww = int(l_remap[2].shape[1] / 2)
-                    print(l_remap[2][0][0])
-                    self.laplacian_pyramic[leve -1] = l_remap[2][0][0]
+                    self.laplacian_pyramic[leve -1][y-1][x-1] = l_remap[leve-1][0][0]
+            # cv2.imshow("lap",np.array((self.laplacian_pyramic[leve-1] * 255)).astype(np.uint8))
+            # cv2.waitKey(0)
+            fn = os.path.join(r"C:\Users\Administrator\Desktop",str(leve) + ".png")
+            cv2.imwrite(fn,np.array((self.laplacian_pyramic[leve-1] * 255)).astype(np.uint8))
+        self.laplacian_pyramic[self.leves-1] = self.gaussian_pyramid[self.leves-1]
+
+
 
     def imshow(self,src,dst):
         plt.subplot(121)
@@ -148,10 +195,7 @@ class MylocalLaplacianFilter():
         plt.show()
 if __name__ == '__main__':
     path = './data/inputdata/flower.png'
-    MylocalLaplacianFilter(path,alpha = 0.25,beta = 1,sigma =0.4,noise_leve=0.01).imageProcessor()
-    # print(array.shape)
-    # res = np.zeros((array.shape[0] * 2,array.shape[1] * 2),dtype=np.float64)
-    # res = cv2.pyrUp(array)
-    # print(res)
+    MylocalLaplacianFilter(path,alpha = 0.1,beta = 0.1,sigma =0.1,noise_leve=0.01).imageProcessor()
+
 
 

@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
-
+import os
 
 
 class Sample():
@@ -27,6 +27,7 @@ class Sample():
         return np.array(kernel)
     def downSample(self,inImg,cols,rows):
         outImg = np.zeros(shape=(cols,rows),dtype=np.float32)
+        outImg = cv2.filter2D(outImg,-1,self.downSampleKernel())
         x = 0
         for col in range(cols):
             y = 0
@@ -47,8 +48,42 @@ class Sample():
                 upSample[col][row] = inImg[x][y]
                 y += 1
             x += 1
+        upSample = cv2.filter2D(upSample, -1, kernel=self.upSampleKernel())
         return upSample
+    def laplacian_pyramid(self,img,leves):
+        laplacainLayers = [None] * leves
+        guassLayers = [None] * leves
 
+        guassLayers[0] = img.copy()
+        for leve in range(1,leves):
+            tmpImge = guassLayers[leve - 1]
+            rows = int((tmpImge.shape[0] + 1) / 2)
+            cols = int((tmpImge.shape[1] + 1)/ 2)
+            downSampleImg = self.downSample(tmpImge,rows,cols)
+            upSampleImg = self.upSample(downSampleImg,tmpImge.shape[0],tmpImge.shape[1])
+            guassLayers[leve] = downSampleImg
+            laplacainLayers[leve-1] = np.subtract(tmpImge,upSampleImg)
+        laplacainLayers[leves-1] = guassLayers[leves-1]
+        # savePath = r"C:\Users\Administrator\Desktop"
+        # for i in range(leves):
+        #     fnG = os.path.join(savePath,"guass_" + str(i) + ".png")
+        #     fnL = os.path.join(savePath,"lapcian_" + str(i) + ".png")
+        #
+        #     cv2.imwrite(fnG,guassLayers[i].astype(np.uint8))
+        #     cv2.imwrite(fnL,laplacainLayers[i].astype(np.uint8))
+        return guassLayers,laplacainLayers
+    def gaussPyramid(self,img,leves):
+        guassLayers = [None] * leves
+
+        guassLayers[0] = img.copy()
+        for leve in range(1,leves):
+            tmpImge = guassLayers[leve - 1]
+            rows = int((tmpImge.shape[0] + 1) / 2)
+            cols = int((tmpImge.shape[1] + 1)/ 2)
+            downSampleImg = self.downSample(tmpImge,rows,cols)
+            upSampleImg = self.upSample(downSampleImg,tmpImge.shape[0],tmpImge.shape[1])
+            guassLayers[leve] = downSampleImg
+        return guassLayers
 
     def processer(self,path):
         img = cv2.imread(path)
@@ -62,7 +97,7 @@ class Sample():
         cols = img.shape[0]
         rows = img.shape[1]
         imgUs = self.upSample(imgDs,cols,rows)
-        imgUs = cv2.filter2D(imgUs,-1,kernel=self.upSampleKernel())
+        # imgUs = cv2.filter2D(imgUs,-1,kernel=self.upSampleKernel())
         print("src shape",img.shape,"ds shape",imgDs.shape,"us shape",imgUs.shape)
         diff = np.subtract(img,imgUs)
 
@@ -73,7 +108,10 @@ class Sample():
         cv2.waitKey(0)
 if __name__ == '__main__':
     path = r"C:\Users\Administrator\Desktop\IMG_2405.JPG"
-    Sample().processer(path)
+    # Sample().processer(path)
+    img = cv2.imread(path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    Sample().laplacian_pyramid(img,6)
 
 
 

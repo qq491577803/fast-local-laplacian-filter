@@ -319,10 +319,12 @@ class LocalLaplaceImageConverter(QThread):
                     if color == 'rgb':
                         gauss = self.gaussian_pyramid[level - 1][y - 1, x - 1, :]
                     print("gauss pyramid:",gauss.shape,gauss,file=f)
-                    img_remapped = self.remapping(isub, gauss, self.color)
+
+                    img_remapped = self.remapping(isub, gauss, "lum")
                     print("remap:",img_remapped.shape,file=f)
                     l_remap = self.laplace_pyramid(img_remapped, level + 1, [yrng[0], yrng[1], xrng[0], xrng[1]])
-
+                    # print("---------remap")
+                    # print("remap",l_remap)
                     yfc = yf - yrng[0] + 1
                     xfc = xf - xrng[0] + 1
 
@@ -334,6 +336,7 @@ class LocalLaplaceImageConverter(QThread):
                                                                              xfclev0 - 1, :]
                     if color == 'lum':
                         self.laplacian_pyramid[level - 1][y - 1, x - 1] = l_remap[level - 1][yfclev0 - 1, xfclev0 - 1]
+                    # print("kojrjonr",self.laplacian_pyramid[level - 1][y - 1, x - 1])
             self.sendInfoFromConverter.emit(level)
         out = self.reconstruct_laplacian_pyramid()
         return out
