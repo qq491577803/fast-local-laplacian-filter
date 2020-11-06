@@ -17,17 +17,16 @@ class Sample():
         ]
         return np.array(kernel)
     def downSampleKernel(self):
-        kernel=[
-               [1/256,  4/256,  6/256,  4/256, 1/256],
-               [4/256, 16/256, 24/256, 16/256, 4/256],
-               [6/256, 24/256, 36/256, 24/256, 6/256],
-               [4/256, 16/256, 24/256, 16/256, 4/256],
-               [1/256,  4/256,  6/256,  4/256, 1/256]
-        ]
-        return np.array(kernel)
-    def downSample(self,inImg,cols,rows):
-        outImg = np.zeros(shape=(cols,rows),dtype=np.float32)
-        outImg = cv2.filter2D(outImg,-1,self.downSampleKernel())
+        a = [.05, .25, .4, .25, .05]
+        kernel_1 = np.array(a, np.float64)
+        kernel_2 = np.array(kernel_1)[np.newaxis]
+        kernel = kernel_2.T
+        f = np.multiply(kernel, kernel_1, None)
+        return f
+
+    def downSample(self,inImg, cols, rows):
+        outImg = np.zeros(shape=(cols, rows), dtype=np.float64)
+        outImg = cv2.filter2D(outImg, -1, self.downSampleKernel())
         x = 0
         for col in range(cols):
             y = 0
@@ -37,7 +36,6 @@ class Sample():
                 outImg[col][row] = inImg[x][y]
                 y += 2
             x += 2
-        outImg = cv2.filter2D(outImg,-1,kernel=self.downSampleKernel())
         return outImg
     def upSample(self,inImg,cols,rows):
         upSample = np.zeros(shape=(cols,rows),dtype=np.float32)
@@ -50,6 +48,22 @@ class Sample():
             x += 1
         upSample = cv2.filter2D(upSample, -1, kernel=self.upSampleKernel())
         return upSample
+
+
+    def rebuidLaplacian_pyramid(self,laplacainPyraimd):
+        leves = len(laplacainPyraimd)
+        out = laplacainPyraimd[leves - 1]
+        for i in range(leves-1,0,-1):
+            print("dddd")
+            upSample = self.upSample(out,laplacainPyraimd[i-1].shape[0],laplacainPyraimd[i-1].shape[1])
+            out = np.add(upSample,laplacainPyraimd[i-1])
+        savePath = r"C:\Users\Administrator\Desktop"
+        cv2.imwrite(os.path.join(savePath,"res.png"),out.astype(np.uint8))
+        return out
+
+
+
+
     def laplacian_pyramid(self,img,leves):
         laplacainLayers = [None] * leves
         guassLayers = [None] * leves
@@ -64,14 +78,7 @@ class Sample():
             guassLayers[leve] = downSampleImg
             laplacainLayers[leve-1] = np.subtract(tmpImge,upSampleImg)
         laplacainLayers[leves-1] = guassLayers[leves-1]
-        # savePath = r"C:\Users\Administrator\Desktop"
-        # for i in range(leves):
-        #     fnG = os.path.join(savePath,"guass_" + str(i) + ".png")
-        #     fnL = os.path.join(savePath,"lapcian_" + str(i) + ".png")
-        #
-        #     cv2.imwrite(fnG,guassLayers[i].astype(np.uint8))
-        #     cv2.imwrite(fnL,laplacainLayers[i].astype(np.uint8))
-        return guassLayers,laplacainLayers
+        return laplacainLayers
     def gaussPyramid(self,img,leves):
         guassLayers = [None] * leves
 
@@ -81,7 +88,6 @@ class Sample():
             rows = int((tmpImge.shape[0] + 1) / 2)
             cols = int((tmpImge.shape[1] + 1)/ 2)
             downSampleImg = self.downSample(tmpImge,rows,cols)
-            upSampleImg = self.upSample(downSampleImg,tmpImge.shape[0],tmpImge.shape[1])
             guassLayers[leve] = downSampleImg
         return guassLayers
 
@@ -106,14 +112,39 @@ class Sample():
         cv2.imshow("Us",imgUs.astype(np.uint8))
         cv2.imshow("diff",diff.astype(np.uint8))
         cv2.waitKey(0)
+
+    def downsample11(self,image, subwindow):
+        r = image.shape[0]
+        c = image.shape[1]
+        subwindow = np.arange(r*c).reshape(r, c)
+        subwindow_child = child_window(subwindow)
+        border_mode = 'reweighted'
+        R = None
+        kernel = self.filter()
+        R = cv2.filter2D(image.astype(np.float64), -1, kernel)
+        Z = numpy.ones([r, c], dtype=np.float64)
+        Z = cv2.filter2D(Z, -1, kernel)
+        R = np.divide(R, Z)
+        reven = np.remainder(subwindow[0], 2) == 0
+        ceven = np.remainder(subwindow[2], 2) == 0
+        R = R[reven: r: 2, ceven: c: 2]
+        print(R)
+        cv2.imshow("ds111",R)
+        cv2.waitKey(0)
+        return R
 if __name__ == '__main__':
-    path = r"C:\Users\Administrator\Desktop\IMG_2405.JPG"
+    path = r"E:\local_laplacian_filter\my_laplacian\data\inputdata\flower.png"
     # Sample().processer(path)
     img = cv2.imread(path)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    Sample().laplacian_pyramid(img,6)
+    img = img.astype(float) / 255.
+    Sample = Sample()
+    lap = Sample.laplacian_pyramid(img,4)
+    out = Sample.rebuidLaplacian_pyramid(lap)
+    cv2.imshow("out",out)
+    cv2.waitKey(0)
 
-
+    # subwindow = [1, r, 1, c]
 
 
 

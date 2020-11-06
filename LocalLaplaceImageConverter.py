@@ -1,10 +1,12 @@
 import cv2 as opencv
+import cv2
 import numpy as np
 import numpy.matlib
 import matplotlib.pyplot as plt
 import math
+import os
 from PyQt5.QtCore import QThread, pyqtSignal
-
+from downUpSample import Sample
 import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
@@ -39,6 +41,7 @@ class LocalLaplaceImageConverter(QThread):
         if self.inputFileName:
             self.input = opencv.imread(self.inputFileName, opencv.IMREAD_UNCHANGED)
             self.input = opencv.cvtColor(self.input,opencv.COLOR_BGR2GRAY)
+            self.input = opencv.resize(self.input,dsize=(128,128))
             if len(self.input.shape) == 2:
                 self.color = 'lum'
             else:
@@ -73,15 +76,22 @@ class LocalLaplaceImageConverter(QThread):
             min_d = int((min_d+1)/2)
         return nlev
 
-    # 2D for building Gaussian and Laplacian pyramids
-    def filter(self):
+    def downSampleKernel(self):
         a = [.05, .25, .4, .25, .05]
         kernel_1 = np.array(a, np.float64)
         kernel_2 = np.array(kernel_1)[np.newaxis]
         kernel = kernel_2.T
         f = np.multiply(kernel, kernel_1, None)
         return f
-
+    def upSampleKernel(self):
+        kernel =[
+                [1/64, 4/64,  6/64,  4/64,   1/64],
+                [4/64, 16/64, 24/64, 16/64,  4/64],
+                [6/64, 24/64, 36/64, 24/64,  6/64],
+                [4/64, 16/64, 24/64, 16/64,  4/64],
+                [1/64, 4/64,  6/64,  4/64,   1/64],
+        ]
+        return np.array(kernel)
     # smooth step edge
     def smooth_step(self, xmin, xmax, x):
         y = (x - xmin) / (xmax - xmin)
@@ -143,161 +153,87 @@ class LocalLaplaceImageConverter(QThread):
         child[3] = math.floor((float(child[3]) + 1.0) / 2.0)
         return child
 
-    def upsample(self, image, subwindow, color):
-        R = []
-        Z = []
-        r = int(subwindow[1] - subwindow[0] + 1)
-        c = int(subwindow[3] - subwindow[2] + 1)
-        if color == 'rgb':
-            k = int(image.shape[2])
-        reven = ((subwindow[0]) % 2) == 0
-        ceven = ((subwindow[2]) % 2) == 0
-        border_mode = 'reweighted'
 
-        if color == 'lum':
-            R = np.zeros((int(r), int(c)))
-            Z = np.zeros((int(r), int(c)))
-        if color == 'rgb':
-            R = np.zeros((int(r), int(c), k))
-            Z = np.zeros((int(r), int(c), k))
-        kernel = self.filter()
-
-        if border_mode == 'reweighted':
-            if color == 'lum':
-                if R[reven: r: 2, ceven: c: 2].shape != image.shape:
-                    rslice = slice(reven, r, 2).indices(r)
-                    cslise = slice(ceven, c, 2).indices(c)
-                    np.put(R, [rslice, cslise], image.copy())
-                else:
-                    R[reven: r: 2, ceven: c: 2] = image.copy()
-
-                R = opencv.filter2D(R.astype(np.float64), -1, kernel)
-                Z[reven: r:2, ceven: c: 2] = 1.0
-                Z = opencv.filter2D(Z.astype(np.float64), -1, kernel)
-                R = np.divide(R, Z)
-
-            if color == 'rgb':
-                if R[reven: r: 2, ceven: c: 2, :].shape != image.shape:
-                    rslice = slice(reven, r, 2).indices(r)
-                    cslise = slice(ceven, c, 2).indices(c)
-                    np.put(R, [rslice, cslise], image.copy())
-                else:
-                    R[reven: r: 2, ceven: c: 2, :] = image.copy()
-                R = opencv.filter2D(R.astype(np.float64), -1, kernel)
-                Z[reven: r:2, ceven: c: 2, :] = 1.0
-                Z = opencv.filter2D(Z.astype(np.float64), -1, kernel)
-                R = np.divide(R, Z)
-
-            return R
     def imshow(self,src,dst):
         plt.subplot(121)
         plt.imshow(src)
         plt.subplot(122)
         plt.imshow(dst)
         plt.show()
-    def downsample(self, image, subwindow, color):
-        r = image.shape[0]
-        c = image.shape[1]
-        if not subwindow:
-            subwindow = np.arange(r*c).reshape(r, c)
-        print("par window:",file=f)
-        print(subwindow,file=f)
-        subwindow_child = self.child_window(subwindow)
-        print("child window:",file=f)
-        print(subwindow_child,file=f)
-        border_mode = 'reweighted'
-        R = None
-        kernel = self.filter()
 
-        if border_mode == 'reweighted':
-            R = opencv.filter2D(image.astype(np.float64), -1, kernel)
-            if color == 'rgb':
-                Z = numpy.ones([r, c, 3], dtype=np.float64)
-                Z = opencv.filter2D(Z, -1, kernel)
-                R = np.divide(R, Z)
-            if color == 'lum':
-                Z = numpy.ones([r, c], dtype=np.float64)
-                Z = opencv.filter2D(Z, -1, kernel)
-                R = np.divide(R, Z)
-        else:
-            R = opencv.filter2D(R.astype(np.float64), -1, kernel, borderType=opencv.BORDER_REPLICATE)
-        reven = np.remainder(subwindow[0], 2) == 0
-        ceven = np.remainder(subwindow[2], 2) == 0
 
-        if color == 'rgb':
-            R = R[reven: r: 2, ceven: c: 2, :]
-        if color == 'lum':
-            R = R[reven: r: 2, ceven: c: 2]
-        return R, subwindow_child
+    def downSample(self,inImg, cols, rows):
+        outImg = np.zeros(shape=(cols, rows), dtype=np.float64)
+        outImg = cv2.filter2D(outImg, -1, self.downSampleKernel())
+        x = 0
+        for col in range(cols):
+            y = 0
+            for row in range(rows):
+                y = y if y < inImg.shape[1] else inImg.shape[1] - 1
+                x = x if x < inImg.shape[0] else inImg.shape[0] - 1
+                outImg[col][row] = inImg[x][y]
+                y += 2
+            x += 2
+        return outImg
 
-    def reconstruct_laplacian_pyramid(self, subwindow=None):
-        nlev = self.num_levels
-        subwindow_all = np.zeros((nlev, 4))
-        if not subwindow:
-            subwindow_all[1, :] = [1, self.height, 1, self.cols]
-        else:
-            subwindow_all[1, :] = subwindow
-        for lev in range(2, nlev):
-            subwindow_all[lev, :] = self.child_window(subwindow_all[lev-1,:])
-        R = self.laplacian_pyramid[nlev-1].copy()
-        for lev in range(nlev-1, 0, -1):
-            upsampled = self.upsample(R, subwindow_all[lev, :], self.color)
-            R = np.add(self.laplacian_pyramid[lev-1], upsampled)
-        return R
 
-    def gauss_pyramid(self, image, nlev, subwindow):
-        r = image.shape[0]
-        c = image.shape[1]
-        if not subwindow:
-            subwindow = [1, r, 1, c]
-        if not nlev:
-            nlev = self.get_num_levels(image)
-        pyr = [None] * nlev
-        pyr[0] = image.copy()
+    def upSample(self,inImg,cols,rows):
+        upSample = np.zeros(shape=(cols,rows),dtype=np.float32)
+        x = 0
+        for col in range(0,cols,2):
+            y = 0
+            for row in range(0,rows,2):
+                upSample[col][row] = inImg[x][y]
+                y += 1
+            x += 1
+        upSample = cv2.filter2D(upSample, -1, kernel=self.upSampleKernel())
+        return upSample
 
-        for level in range(1, nlev):
-            print("subwindow:",file = f)
-            print(subwindow,file=f)
-            print("-----start downsample-----",file=f)
-            image_para = image.copy()
-            image, subwindow_child = self.downsample(image, subwindow, self.color)
-            # self.imshow(image_para,image)
-            print("nlev:",nlev,"par:",image_para.shape,"child:",image.shape,file=f)
-            print("-----end downsample-----",file =f)
-            print("subwindow_child:",file=f)
-            print(subwindow_child,file=f)
-            pyr[level] = image.copy()
-        return pyr
+    def rebuidLaplacian_pyramid(self,laplacainPyraimd):
+        leves = len(laplacainPyraimd)
+        out = laplacainPyraimd[leves - 1]
+        for i in range(leves-1,0,-1):
+            upSample = self.upSample(out,laplacainPyraimd[i-1].shape[0],laplacainPyraimd[i-1].shape[1])
+            out = np.add(upSample,laplacainPyraimd[i-1])
+        savePath = r"C:\Users\Administrator\Desktop"
+        cv2.imwrite(os.path.join(savePath,"res.png"),out.astype(np.uint8))
+        return out
 
-    def laplace_pyramid(self, image, nlev, subwindow):
-        r = image.shape[0]
-        c = image.shape[1]
-        j_image = []
-        if not subwindow:
-            subwindow = [1, r, 1, c]
-        if not nlev:
-            nlev = self.get_num_levels(image)
-        pyr = [None] * nlev
-        for level in range(0, nlev-1):
-            j_image = image.copy()
-            image, subwindow_child = self.downsample(j_image, subwindow, self.color)
-            upsampled = self.upsample(image, subwindow, self.color)
-            a = np.subtract(j_image, upsampled)
-            pyr[level] = a
+    def gaussPyramid(self,img,leves):
+        guassLayers = [None] * leves
 
-            subwindow = subwindow_child.copy()
+        guassLayers[0] = img.copy()
+        for leve in range(1,leves):
+            tmpImge = guassLayers[leve - 1]
+            rows = int((tmpImge.shape[0] + 1) / 2)
+            cols = int((tmpImge.shape[1] + 1)/ 2)
+            downSampleImg = self.downSample(tmpImge,rows,cols)
+            guassLayers[leve] = downSampleImg
 
-        pyr[nlev-1] = j_image
-        return pyr
+        return guassLayers
+
+    def laplacianPyramid(self,img,leves):
+        laplacainLayers = [None] * leves
+        guassLayers = [None] * leves
+
+        guassLayers[0] = img.copy()
+        for leve in range(1,leves):
+            tmpImge = guassLayers[leve - 1]
+            rows = int((tmpImge.shape[0] + 1) / 2)
+            cols = int((tmpImge.shape[1] + 1)/ 2)
+            downSampleImg = self.downSample(tmpImge,rows,cols)
+            upSampleImg = self.upSample(downSampleImg,tmpImge.shape[0],tmpImge.shape[1])
+            guassLayers[leve] = downSampleImg
+            laplacainLayers[leve-1] = np.subtract(tmpImge,upSampleImg)
+        laplacainLayers[leves-1] = guassLayers[leves-1]
+        return laplacainLayers
 
     def LocalLaplacianFilter(self, input, color):
         gauss = 0
         self.sendStartInfoFromConverter.emit(self.num_levels)
-        print("---------------------------gaussian_pyramid----------------------------------",file=f)
-        print("start gaussian pyramid",file=f)
-        self.gaussian_pyramid = self.gauss_pyramid(input, None, None)
-        print("end gaussian pyramid",file=f)
-        print("---------------------------laplacian_pyramid----------------------------------",file=f)
+        # self.gaussian_pyramid = self.gauss_pyramid(input, None, None)
+        self.gaussian_pyramid = Sample().gaussPyramid(input,self.num_levels)
+
         self.laplacian_pyramid = self.gaussian_pyramid.copy()
 
         for level in range(1, self.num_levels):
@@ -306,25 +242,19 @@ class LocalLaplaceImageConverter(QThread):
             print("hw:",hw,file=f)
             for y in range(1, self.gaussian_pyramid[level-1].shape[0]+1):
                 for x in range(1, self.gaussian_pyramid[level - 1].shape[1]+1):
-                    print("gauss x,y",x,y,file=f)
+                    print("gauss x,y",x,y)
                     yf = (y - 1) * 2**(level - 1) + 1
                     xf = (x - 1) * 2**(level - 1) + 1
                     yrng = [max(1, yf - hw), min(self.dim[1], yf + hw)]
                     xrng = [max(1, xf - hw), min(self.dim[0], xf + hw)]
-                    print("isub xis:",yrng[0] - 1,yrng[1], xrng[0] - 1,xrng[1],file=f)
                     isub = input[yrng[0] - 1:yrng[1], xrng[0] - 1: xrng[1]]
-                    print("isub:",isub,file=f)
                     if color == 'lum':
                         gauss = self.gaussian_pyramid[level - 1][y - 1, x - 1]
                     if color == 'rgb':
                         gauss = self.gaussian_pyramid[level - 1][y - 1, x - 1, :]
-                    print("gauss pyramid:",gauss.shape,gauss,file=f)
 
                     img_remapped = self.remapping(isub, gauss, "lum")
-                    print("remap:",img_remapped.shape,file=f)
-                    l_remap = self.laplace_pyramid(img_remapped, level + 1, [yrng[0], yrng[1], xrng[0], xrng[1]])
-                    # print("---------remap")
-                    # print("remap",l_remap)
+                    l_remap = self.laplacianPyramid(img_remapped, level)
                     yfc = yf - yrng[0] + 1
                     xfc = xf - xrng[0] + 1
 
@@ -336,9 +266,11 @@ class LocalLaplaceImageConverter(QThread):
                                                                              xfclev0 - 1, :]
                     if color == 'lum':
                         self.laplacian_pyramid[level - 1][y - 1, x - 1] = l_remap[level - 1][yfclev0 - 1, xfclev0 - 1]
-                    # print("kojrjonr",self.laplacian_pyramid[level - 1][y - 1, x - 1])
-            self.sendInfoFromConverter.emit(level)
-        out = self.reconstruct_laplacian_pyramid()
+
+
+        out = self.rebuidLaplacian_pyramid(self.laplacian_pyramid)
+        cv2.imshow("out",(out*255).astype(np.uint8) )
+        cv2.waitKey(0)
         return out
 
     def LocalLaplaceImageProcessor(self):
@@ -350,4 +282,4 @@ class LocalLaplaceImageConverter(QThread):
 
 if __name__ == '__main__':
     path = r"E:\local_laplacian_filter\my_laplacian\data\inputdata\flower.png"
-    LocalLaplaceImageConverter(0.1,0.1,0.1,path,100).LocalLaplaceImageProcessor()
+    lp = LocalLaplaceImageConverter(0.1,0.1,0.1,path,100).LocalLaplaceImageProcessor()
