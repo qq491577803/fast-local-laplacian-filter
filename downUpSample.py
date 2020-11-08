@@ -135,17 +135,20 @@ class Sample():
 if __name__ == '__main__':
     path = r"E:\local_laplacian_filter\my_laplacian\data\inputdata\flower.png"
     # Sample().processer(path)
-    img = cv2.imread(path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    img = img.astype(float) / 255.
-    Sample = Sample()
-    lap = Sample.laplacian_pyramid(img,4)
-    out = Sample.rebuidLaplacian_pyramid(lap)
-    cv2.imshow("out",out)
-    cv2.waitKey(0)
+    # img = cv2.imread(path)
+    # img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # img = img.astype(float) / 255.
+    # Sample = Sample()
+    # lap = Sample.laplacian_pyramid(img,4)
+    # out = Sample.rebuidLaplacian_pyramid(lap)
+    # print(out.shape)
+    # cv2.imshow("out",out)
+    # cv2.waitKey(0)
 
     # subwindow = [1, r, 1, c]
 
-
-
-
+    Sample = Sample()
+    inImg = np.zeros(shape=(267,400))
+    rows = 800
+    cols = 533
+    Sample.upSample(inImg,rows,cols)

@@ -41,7 +41,7 @@ class LocalLaplaceImageConverter(QThread):
         if self.inputFileName:
             self.input = opencv.imread(self.inputFileName, opencv.IMREAD_UNCHANGED)
             self.input = opencv.cvtColor(self.input,opencv.COLOR_BGR2GRAY)
-            self.input = opencv.resize(self.input,dsize=(128,128))
+            # self.input = opencv.resize(self.input,dsize=(128,128))
             if len(self.input.shape) == 2:
                 self.color = 'lum'
             else:
@@ -212,21 +212,22 @@ class LocalLaplaceImageConverter(QThread):
 
         return guassLayers
 
-    def laplacianPyramid(self,img,leves):
-        laplacainLayers = [None] * leves
-        guassLayers = [None] * leves
+    def laplacianPyramid(self,img,nlev):
+        # nlev = 4
+        j_image = []
+        pyr = [None] * nlev
+        for level in range(0, nlev - 1):
+            j_image = img.copy()
+            rows = int((j_image.shape[0] + 1)/2)
+            cols = int((j_image.shape[1] + 1) / 2)
+            image = self.downSample(j_image,rows,cols )
+            upsampled = self.upSample(image, j_image.shape[0], j_image.shape[1])
+            a = np.subtract(j_image, upsampled)
+            pyr[level] = a
+        pyr[nlev - 1] = j_image
+        return pyr
 
-        guassLayers[0] = img.copy()
-        for leve in range(1,leves):
-            tmpImge = guassLayers[leve - 1]
-            rows = int((tmpImge.shape[0] + 1) / 2)
-            cols = int((tmpImge.shape[1] + 1)/ 2)
-            downSampleImg = self.downSample(tmpImge,rows,cols)
-            upSampleImg = self.upSample(downSampleImg,tmpImge.shape[0],tmpImge.shape[1])
-            guassLayers[leve] = downSampleImg
-            laplacainLayers[leve-1] = np.subtract(tmpImge,upSampleImg)
-        laplacainLayers[leves-1] = guassLayers[leves-1]
-        return laplacainLayers
+
 
     def LocalLaplacianFilter(self, input, color):
         gauss = 0
@@ -235,6 +236,10 @@ class LocalLaplaceImageConverter(QThread):
         self.gaussian_pyramid = Sample().gaussPyramid(input,self.num_levels)
 
         self.laplacian_pyramid = self.gaussian_pyramid.copy()
+
+
+
+
 
         for level in range(1, self.num_levels):
             hw = 3 * 2**level - 2
@@ -254,7 +259,8 @@ class LocalLaplaceImageConverter(QThread):
                         gauss = self.gaussian_pyramid[level - 1][y - 1, x - 1, :]
 
                     img_remapped = self.remapping(isub, gauss, "lum")
-                    l_remap = self.laplacianPyramid(img_remapped, level)
+                    l_remap = self.laplacianPyramid(img_remapped, level + 1)
+                    # print(l_remap)
                     yfc = yf - yrng[0] + 1
                     xfc = xf - xrng[0] + 1
 

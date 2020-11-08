@@ -208,9 +208,8 @@ class MylocalLaplacianFilter():
                     y_end = min(y_src + sample_with,self.dim[1])
                     src = self.img_norm[y_start:y_end,x_start:x_end]
                     g0_remap = LocalLaplaceImageConverter(0.1, 0.1, 0.1, './data/inputdata/flower.png', 100).remapping(src,g0,"lum")
-                    _,l_remap = Sample().laplacian_pyramid(g0_remap, leve)
+                    l_remap = Sample().laplacian_pyramid(g0_remap, leve+1)
 
-                    x = x_end
 
 
                     self.laplacian_pyramic[leve -1][y-1][x-1] = l_remap[leve-1][0][0]
